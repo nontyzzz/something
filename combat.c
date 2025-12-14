@@ -44,6 +44,24 @@ static int get_effective_player_def(const CombatState *state) {
     return def;
 }
 
+/* ADDED: Helper function to get effective enemy speed */
+static int get_effective_enemy_spd(const Enemy *e) {
+    int spd = e->spd;
+
+    if (e->status.spd_debuff_turns > 0) {
+        spd = (spd * (100 - e->status.spd_debuff_percent)) / 100;
+    }
+    if (e->status.spd_buff_turns > 0) {
+        spd = (spd * (100 + e->status.spd_buff_percent)) / 100;
+    }
+    if (e->status.slow_turns > 0) {
+        spd = (spd * (100 - e->status.slow_percent)) / 100;
+    }
+
+    if (spd < 1) spd = 1;
+    return spd;
+}
+
 /* Apply ATK debuff/buff to an already-computed damage number. */
 static int apply_player_atk_modifiers_to_damage(const CombatState *state, int damage) {
     if (state->player.status.atk_debuff_turns > 0) {
@@ -171,6 +189,15 @@ int calculate_hit_chance(int attacker_spd, int target_spd, Enemy *target_enemy) 
     return clamp(chance, 0, 100);
 }
 
+/* ADDED: Hit chance calculation for enemy attacking player */
+static int calculate_enemy_hit_chance(int enemy_spd, const CombatState *state) {
+    int attacker_spd = enemy_spd;
+    int target_spd = get_effective_player_spd(state);
+
+    int chance = HIT_BASE_CHANCE + (int)((attacker_spd - target_spd) * SPD_HIT_FACTOR);
+    return clamp(chance, 0, 100);
+}
+
 /* ===== DEFENSE REDUCTION ===== */
 int apply_def_reduction(int base_damage, int def) {
     int denominator = 100 + (int)(def * DEF_REDUCTION_FACTOR);
@@ -224,7 +251,19 @@ void apply_damage(CombatState *state, int target_enemy_idx, int damage) {
     printf("%s takes %d damage! (HP: %d/%d)\n", e->name, reduced_damage, e->current_hp, e->max_hp);
 }
 
-void apply_player_damage(CombatState *state, int damage) {
+/* MODIFIED: Added hit chance calculation for enemy attacks */
+void apply_player_damage(CombatState *state, int damage, Enemy *attacker) {
+    /* ADDED: Hit chance check for enemy attacks */
+    if (attacker != NULL) {
+        int enemy_spd = get_effective_enemy_spd(attacker);
+        int hit_chance = calculate_enemy_hit_chance(enemy_spd, state);
+
+        if (!random_percent(hit_chance)) {
+            printf("%s MISSED!\n", attacker->name);
+            return;
+        }
+    }
+
     if (state->player_guarding) {
         damage = (damage * (100 - GUARD_DAMAGE_REDUCTION)) / 100;
         printf("Guard! Reduced damage to %d\n", damage);
@@ -519,6 +558,7 @@ void display_combat_state(const CombatState *state) {
 }
 
 /* ===== ENEMY SKILL APPLICATION ===== */
+/* MODIFIED: All enemy damage calls now include attacker pointer */
 void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
     if (enemy_idx < 0 || enemy_idx >= state->num_enemies) return;
 
@@ -536,7 +576,7 @@ void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
     int damage = 0;
     if (skill->damage_percent > 0) {
         damage = get_effective_enemy_damage(e, skill->damage_percent);
-        apply_player_damage(state, damage);
+        apply_player_damage(state, damage, e);  /* MODIFIED: Added attacker pointer */
     }
 
     /* Drain */
@@ -649,6 +689,7 @@ void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
 }
 
 /* ===== MAIN COMBAT LOOP ===== */
+/* MODIFIED: All enemy normal attack calls now include attacker pointer */
 int run_combat_loop(CombatState *state) {
     display_combat_state(state);
 
@@ -691,7 +732,7 @@ int run_combat_loop(CombatState *state) {
                 if (action == 0) {
                     int dmg = get_effective_enemy_damage(&state->enemies[i], NORMAL_ATTACK_PERCENT);
                     printf("%s attacks %s!\n", state->enemies[i].name, state->player.name);
-                    apply_player_damage(state, dmg);
+                    apply_player_damage(state, dmg, &state->enemies[i]);  /* MODIFIED: Added attacker pointer */
                 } else {
                     apply_enemy_skill(state, i, action);
                 }
@@ -1020,7 +1061,7 @@ int run_combat_loop(CombatState *state) {
             if (action == 0) {
                 int dmg = get_effective_enemy_damage(&state->enemies[i], NORMAL_ATTACK_PERCENT);
                 printf("%s attacks %s!\n", state->enemies[i].name, state->player.name);
-                apply_player_damage(state, dmg);
+                apply_player_damage(state, dmg, &state->enemies[i]);  /* MODIFIED: Added attacker pointer */
             } else {
                 apply_enemy_skill(state, i, action);
             }
@@ -1031,4 +1072,3 @@ int run_combat_loop(CombatState *state) {
         display_combat_state(state);
     }
 }
-

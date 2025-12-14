@@ -40,7 +40,7 @@ int apply_def_reduction(int base_damage, int def);
 int get_effective_enemy_damage(Enemy *e, int base_damage);
 
 void apply_damage(CombatState *state, int target_enemy_idx, int damage);
-void apply_player_damage(CombatState *state, int damage);
+void apply_player_damage(CombatState *state, int damage, Enemy *attacker);  /* MODIFIED: Added attacker parameter */
 
 /* Enemy status effect application */
 void apply_burn(Enemy *e, int damage_per_turn, int duration);

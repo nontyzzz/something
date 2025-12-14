@@ -23,7 +23,7 @@
 /* Combat constants */
 #define BURN_DAMAGE_PERCENT 40
 #define HIT_BASE_CHANCE 85
-#define SPD_HIT_FACTOR 0.5f
+#define SPD_HIT_FACTOR 0.3f
 #define DEF_REDUCTION_FACTOR 0.5f
 #define NORMAL_ATTACK_PERCENT 50
 #define GUARD_DAMAGE_REDUCTION 35
