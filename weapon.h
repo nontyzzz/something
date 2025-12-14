@@ -1,56 +1,33 @@
 #ifndef WEAPON_H
 #define WEAPON_H
 
-#include <stdio.h>
-#include "combat.h" // Needed for the Character struct declaration
+#include "gacha.h"
 
-#define MAX_WEAPON_INV 100 // Maximum number of weapons a player can hold
+/* ===== WEAPON SKILL STRUCT ===== */
 
-// Weapon Rarity
-typedef enum {
-    WPN_RARITY_3 = 3,
-    WPN_RARITY_4 = 4,
-    WPN_RARITY_5 = 5
-} WeaponRarity;
-
-// Weapon Types
-typedef enum {
-    WPN_TYPE_SWORD,
-    WPN_TYPE_BOW,
-    WPN_TYPE_CATALYST,
-    WPN_TYPE_DEFAULT
-} WeaponType;
-
-// The core Weapon structure
 typedef struct {
-    char name[50];
-    int id;
-    int star_level;
-    WeaponType type;
-    
-    // Base stat boosts (flat addition)
-    int atk_base_boost; 
-    int hp_base_boost; 
-    int def_base_boost; 
-    
-    // Special weapon skill ID (0 if none)
-    int skill_id;
-} Weapon;
+    char name[100];
+    char description[300];
+    int damage_percent;
+    int single_target;
+    int stun_chance;
+    int burn_chance;
+    int burn_damage_percent;
+    int burn_duration;
+    int atk_debuff_percent;
+    int atk_debuff_duration;
+    int def_debuff_percent;
+    int def_debuff_duration;
+    int spd_buff_percent;
+    int spd_buff_duration;
+    int spd_debuff_percent;
+    int spd_debuff_duration;
+    int heal_percent;
+} WeaponSkill;
 
-// Inventory structure to hold all weapons
-typedef struct {
-    Weapon weapons[MAX_WEAPON_INV];
-    int count;
-} WeaponInventory;
+/* ===== WEAPON FUNCTIONS ===== */
 
-// Function declarations
-Weapon createDefaultWeapon(); 
-Weapon createWeapon(int id);
-int addWeaponToInventory(WeaponInventory *inv, Weapon wpn);
-void listWeapons(WeaponInventory *inv);
-void displayWeaponStats(Weapon *wpn);
+Weapon* get_weapon_by_id(int id);
+WeaponSkill* get_weapon_skill(int weapon_id);
 
-// The primary equip function now correctly uses the Inventory struct
-void equipWeapon(Character *c, WeaponInventory *inv);
-
-#endif // WEAPON_H
+#endif

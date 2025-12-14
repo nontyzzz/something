@@ -1,156 +1,114 @@
 #include "character.h"
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include "weapon.h" // Needed for createDefaultWeapon
 
-// forward declare pickTarget (from combat.c)
-extern int pickTarget(Enemy enemies[]);
-extern int calculateDamage(int atk, int def);
-extern void saveCharacter(Character *c); 
-extern Weapon createDefaultWeapon(); // Declared in weapon.h
-
-// Create character presets
-Character createCharacter(CharacterType type) {
-    Character c;
-    memset(&c, 0, sizeof(Character));
-
-    switch (type) {
-        case CHAR_SABER:
-            strcpy(c.name, "Saber");
-            c.atk = 40; c.hp = c.maxHP = 180; c.def = 12; c.spd = 15; c.hasWeaponSkill = 1;
-            break;
-
-        case CHAR_ISHTAR:
-            strcpy(c.name, "Ishtar");
-            c.atk = 55; c.hp = c.maxHP = 150; c.def = 8; c.spd = 18; c.hasWeaponSkill = 0;
-            break;
-
-        case CHAR_GILGAMESH:
-            strcpy(c.name, "Gilgamesh");
-            c.atk = 48; c.hp = c.maxHP = 170; c.def = 10; c.spd = 14; c.hasWeaponSkill = 1;
-            break;
-
-        case CHAR_WELT_YANG:
-            strcpy(c.name, "Welt Yang");
-            c.atk = 42; c.hp = c.maxHP = 160; c.def = 14; c.spd = 13; c.hasWeaponSkill = 1;
-            break;
-
-        case CHAR_DEFAULT: // FIX: CHAR_DEFAULT is correctly handled here
-        default:
-            strcpy(c.name, "Hero");
-            c.atk = 30; c.hp = c.maxHP = 150; c.def = 10; c.spd = 12; c.hasWeaponSkill = 1;
-            break;
+CombatCharacter create_character(int char_id) {
+    CombatCharacter c;
+    memset(&c, 0, sizeof(CombatCharacter));
+    
+    /* Stats are ONLY from weapons - NOT base stats */
+    c.atk = 0;
+    c.hp = 0;
+    c.def = 0;
+    c.spd = 0;
+    
+    if (char_id == 1) {
+        strcpy(c.name, "Saber");
+        c.id = 1;
+        c.allowed_weapon_type = TYPE_SWORD;
+    } else if (char_id == 2) {
+        strcpy(c.name, "Ishtar");
+        c.id = 2;
+        c.allowed_weapon_type = TYPE_BOW;
+    } else if (char_id == 3) {
+        strcpy(c.name, "Gilgamesh");
+        c.id = 3;
+        c.allowed_weapon_type = TYPE_SPEAR;
+    } else if (char_id == 4) {
+        strcpy(c.name, "Welt Yang");
+        c.id = 4;
+        c.allowed_weapon_type = TYPE_STAFF;
     }
-
-    c.isBurning = 0;
-    c.isStunned = 0;
     
-    // Initialize with the default unarmed weapon structure
-    c.equippedWeapon = createDefaultWeapon();
-    
+    c.equipped_weapon_id = 0;
     return c;
 }
 
-// --- Skill implementations remain here ---
-void useSkill1(Character *c, Enemy *targets, int targetCount) {
-    if (strcmp(c->name, "Saber") == 0) {
-        // Avalon: heal 30% of max HP
-        int heal = (int)(c->maxHP * 0.30f);
-        c->hp += heal;
-        if (c->hp > c->maxHP) c->hp = c->maxHP;
-        printf("%s used Avalon and healed %d HP (HP: %d/%d)\n", c->name, heal, c->hp, c->maxHP);
-        return;
-    }
-
-    if (strcmp(c->name, "Ishtar") == 0) {
-        // Throw Gems: single target 300% dmg
-        int t = pickTarget(targets);
-        if (t == -1) return;
-        int dmg = calculateDamage(c->atk * 3, targets[t].def);
-        targets[t].hp -= dmg;
-        printf("%s used Throw Gems on %s for %d damage!\n", c->name, targets[t].name, dmg);
-        return;
-    }
-
-    if (strcmp(c->name, "Gilgamesh") == 0) {
-        // Gate of Babylon: hit all enemies 75% and chance to random debuff (30% stun)
-        printf("%s used Gate of Babylon!\n", c->name);
-        for (int i = 0; i < targetCount; i++) {
-            if (targets[i].hp <= 0) continue;
-            int dmg = calculateDamage((int)(c->atk * 0.75f), targets[i].def);
-            targets[i].hp -= dmg;
-            printf(" - %s took %d damage\n", targets[i].name, dmg);
-            int r = rand() % 100;
-            if (r < 30) {
-                targets[i].isStunned = 1;
-                printf("   %s is debuffed (stunned)!\n", targets[i].name);
-            }
-        }
-        return;
-    }
-
-    if (strcmp(c->name, "Welt Yang") == 0) {
-        // Skill 1: deal 75% to all and decrease enemy speed by 3
-        printf("%s used Cutting Gale!\n", c->name);
-        for (int i = 0; i < targetCount; i++) {
-            if (targets[i].hp <= 0) continue;
-            int dmg = calculateDamage((int)(c->atk * 0.75f), targets[i].def);
-            targets[i].hp -= dmg;
-            targets[i].spd -= 3;
-            if (targets[i].spd < 1) targets[i].spd = 1;
-            printf(" - %s took %d damage and lost speed (SPD now %d)\n", targets[i].name, dmg, targets[i].spd);
-        }
-        return;
-    }
-
-    // fallback to original per-target power slash
-    printf("%s used Power Slash (fallback)!\n", c->name);
-    int t = pickTarget(targets);
-    if (t == -1) return;
-    int dmg = calculateDamage((int)(c->atk * 1.5f), targets[t].def);
-    targets[t].hp -= dmg;
-    printf("%s dealt %d damage to %s\n", c->name, dmg, targets[t].name);
+int can_equip(CombatCharacter *c, Weapon *w) {
+    if (!w) return 0;
+    return w->type == c->allowed_weapon_type;
 }
 
-void useSkill2(Character *c, Enemy *targets, int targetCount) {
-    if (strcmp(c->name, "Saber") == 0) {
-        // Saber Skill 2: AoE 75% (Holy Arc)
-        printf("%s used Holy Arc (AOE 75%%)!\n", c->name);
-        for (int i = 0; i < targetCount; i++) {
-            if (targets[i].hp <= 0) continue;
-            int dmg = calculateDamage((int)(c->atk * 0.75f), targets[i].def);
-            targets[i].hp -= dmg;
-            printf(" - %s took %d damage\n", targets[i].name, dmg);
+void equip_weapon(CombatCharacter *c, int weapon_id) {
+    Weapon *w = get_weapon_by_id(weapon_id);
+    if (w && can_equip(c, w)) {
+        c->equipped_weapon_id = weapon_id;
+        c->atk = w->atk;
+        c->hp = w->hp;
+        c->def = w->def;
+        c->spd = w->spd;
+    }
+}
+
+Skill get_character_skill(int char_id, int skill_num) {
+    Skill s;
+    memset(&s, 0, sizeof(Skill));
+    
+    if (char_id == 1) { /* Saber - Support/Healer/Tank */
+        if (skill_num == 1) {
+            s.id = 1;
+            strcpy(s.name, "Avalon's Protection");
+            strcpy(s.description, "Heal self 20%% max HP + increase own DEF by 50%% for 2 turns");
+            s.damage_percent = 0;
+            s.cooldown = 4;
+        } else if (skill_num == 2) {
+            s.id = 2;
+            strcpy(s.name, "Excalibur Strike");
+            strcpy(s.description, "Deal 120%% ATK to all enemies + reduce all enemy ATK by 40%% for 2 turns");
+            s.damage_percent = 120;
+            s.cooldown = 4;
         }
-        return;
+    } else if (char_id == 2) { /* Ishtar - Speed/Burst DPS */
+        if (skill_num == 1) {
+            s.id = 3;
+            strcpy(s.name, "Throw Gems");
+            strcpy(s.description, "Deal 180%% ATK to single enemy + inflict burn (40%% ATK/turn for 3 turns)");
+            s.damage_percent = 180;
+            s.cooldown = 4;
+        } else if (skill_num == 2) {
+            s.id = 4;
+            strcpy(s.name, "Starlight Rain");
+            strcpy(s.description, "Deal 100%% ATK to all enemies + increase own SPD by 60%% for 2 turns + 50%% chance to slow all enemies (SPD -35%% for 2 turns)");
+            s.damage_percent = 100;
+            s.cooldown = 4;
+        }
+    } else if (char_id == 3) { /* Gilgamesh - Control/CC */
+        if (skill_num == 1) {
+            s.id = 5;
+            strcpy(s.name, "Gate of Babylon");
+            strcpy(s.description, "Deal 130%% ATK to all enemies + 50%% chance to stun each for 2 turns");
+            s.damage_percent = 130;
+            s.cooldown = 4;
+        } else if (skill_num == 2) {
+            s.id = 6;
+            strcpy(s.name, "Chains of Heaven");
+            strcpy(s.description, "Deal 170%% ATK to single enemy + reduce DEF by 60%% for 3 turns + 60%% chance to stun for 1 turn");
+            s.damage_percent = 170;
+            s.cooldown = 4;
+        }
+    } else if (char_id == 4) { /* Welt Yang - Debuffer/Control */
+        if (skill_num == 1) {
+            s.id = 7;
+            strcpy(s.name, "Gravity Suppression");
+            strcpy(s.description, "Deal 150%% ATK to single enemy + reduce DEF by 70%% for 3 turns");
+            s.damage_percent = 150;
+            s.cooldown = 4;
+        } else if (skill_num == 2) {
+            s.id = 8;
+            strcpy(s.name, "Gravity Imprisonment");
+            strcpy(s.description, "Deal 110%% ATK to all enemies + reduce all enemy SPD by 70%% for 2 turns + 55%% chance to stun each for 1 turn");
+            s.damage_percent = 110;
+            s.cooldown = 4;
+        }
     }
-
-    if (strcmp(c->name, "Ishtar") == 0) {
-        printf("Ishtar's Skill 2 not implemented yet.\n");
-        return;
-    }
-
-    if (strcmp(c->name, "Gilgamesh") == 0) {
-        // Chains of Heaven: single target 200% and stun
-        int t = pickTarget(targets);
-        if (t == -1) return;
-        int dmg = calculateDamage((int)(c->atk * 2.0f), targets[t].def);
-        targets[t].hp -= dmg;
-        targets[t].isStunned = 1;
-        printf("%s used Chains of Heaven on %s for %d damage and stunned them!\n", c->name, targets[t].name, dmg);
-        return;
-    }
-
-    if (strcmp(c->name, "Welt Yang") == 0) {
-        printf("Welt Yang's Skill 2 not implemented yet.\n");
-        return;
-    }
-
-    // fallback burning strike
-    printf("%s used Burning Strike (fallback)!\n", c->name);
-    int t = pickTarget(targets);
-    if (t == -1) return;
-    targets[t].isBurning = 3;
-    printf("%s is now burning!\n", targets[t].name);
+    
+    return s;
 }

@@ -1,56 +1,69 @@
 #ifndef COMBAT_H
 #define COMBAT_H
 
-#include <stdio.h>
-#include "weapon.h" // NOW CORRECTLY INCLUDED HERE
+#include "enemy.h"
 
-#define MAX_ENEMIES 3
-
-//----------------------------------------------------
-// STRUCTS
-//----------------------------------------------------
+/* ===== COMBAT STATE STRUCT ===== */
 typedef struct {
-    char name[50];
-    int atk, hp, def, spd;
-    int maxHP;
-    int hasWeaponSkill;
-    int isBurning;
-    int isStunned;
-    // NEW: The complete Weapon struct to hold equipped weapon data
-    Weapon equippedWeapon; 
-} Character;
+    CombatCharacter player;
 
-typedef struct {
-    char name[50];
-    int atk, hp, def, spd;
-    int isBurning;
-    int isStunned;
-} Enemy;
+    Enemy enemies[MAX_ENEMIES];
+    int num_enemies;
 
-//----------------------------------------------------
-// FUNCTION DECLARATIONS (combat functions)
-//----------------------------------------------------
-void saveCharacter(Character *c);
-void loadCharacter(Character *c);
+    int turn_count;
 
-int calculateDamage(int atk, int def);
+    int player_current_hp;
 
-int pickTarget(Enemy enemies[]);
+    /* Temporary max-HP reduction (percent) + remaining turns */
+    int player_max_hp_modified;        /* percent (0..100) */
+    int player_max_hp_modified_turns;  /* turns remaining */
 
-void applyBurn(Character *c);
-void applyBurnEnemy(Enemy *e);
+    int player_guarding;
 
-void normalAttack(Character *c, Enemy *e);
-void guardAction(Character *c);
-void skill1(Character *c, Enemy *e); // fallback
-void skill2(Character *c, Enemy *e); // fallback
-void weaponSkill(Character *c, Enemy enemies[]);
+    int skill1_cooldown;
+    int skill2_cooldown;
+    int weapon_skill_cooldown;
 
-void enemyAttack(Enemy *e, Character *c);
+    int equipped_weapon_id;
 
-void takeTurn(Character *c, Enemy enemies[]);
-void enemyTurns(Character *c, Enemy enemies[]);
+    int phoenix_rebirth_used;
 
-void battle(Character *c);
+    /* Used for permanent max-HP reduction from Eternal Warden Judgment */
+    int eternal_warden_judgment_debuffs[MAX_ENEMIES];
+} CombatState;
 
-#endif // COMBAT_H
+/* ===== COMBAT FUNCTIONS ===== */
+void init_combat(CombatState *state, CombatCharacter *player, Enemy enemies[], int num_enemies);
+
+int calculate_hit_chance(int attacker_spd, int target_spd, Enemy *target_enemy);
+int apply_def_reduction(int base_damage, int def);
+int get_effective_enemy_damage(Enemy *e, int base_damage);
+
+void apply_damage(CombatState *state, int target_enemy_idx, int damage);
+void apply_player_damage(CombatState *state, int damage);
+
+/* Enemy status effect application */
+void apply_burn(Enemy *e, int damage_per_turn, int duration);
+void apply_stun_effect(Enemy *e, int duration);
+void apply_atk_debuff(Enemy *e, int percent, int duration);
+void apply_def_debuff(Enemy *e, int percent, int duration);
+void apply_spd_debuff(Enemy *e, int percent, int duration);
+void apply_slow_effect(Enemy *e, int percent, int duration);
+
+/* Enemy buff functions */
+void apply_atk_buff(Enemy *e, int percent, int duration);
+void apply_def_buff(Enemy *e, int percent, int duration);
+void apply_spd_buff(Enemy *e, int percent, int duration);
+
+/* Special effect functions */
+void apply_healing_reduction(Enemy *e, int percent, int duration);
+void apply_max_hp_reduction(CombatState *state, int enemy_idx, int percent);
+void apply_fire_resistance_down(Enemy *e, int percent, int duration);
+
+void update_combat_turn(CombatState *state);
+void display_combat_state(const CombatState *state);
+
+void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num);
+int run_combat_loop(CombatState *state);
+
+#endif

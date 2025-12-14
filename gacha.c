@@ -1,256 +1,418 @@
 #include "gacha.h"
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <stdio.h> // Ensure stdio is included
-#include "combat.h" // Needed for Character, loadCharacter, saveCharacter
-#include "weapon.h" // Needed for createWeapon, addWeaponToInventory, equipWeapon
+#include "weapon.h"
 
-#define WEAPONS_3_COUNT 20
-#define WEAPONS_4_COUNT 8
-#define WEAPONS_5_COUNT 4
-#define CHAR_COUNT 4
+/* ===== WEAPON POOLS ===== */
 
-// --- Item definitions ---
-Item weapons_3star[WEAPONS_3_COUNT] = {
-    {"Emberfang", 311, 4.5, "3-Star", 3}, {"Ironleaf Rapier", 312, 4.5, "3-Star", 3}, {"Duskwind Cutter", 313, 4.5, "3-Star", 3},
-    {"Stormvein Blade", 314, 4.5, "3-Star", 3}, {"Frostthorn Saber", 315, 4.5, "3-Star", 3},
-    {"Willowstrike", 321, 4.5, "3-Star", 3}, {"Ashenwind Bow", 322, 4.5, "3-Star", 3}, {"Shadowglint Recurve", 323, 4.5, "3-Star", 3},
-    {"Bramblethorn Arch", 324, 4.5, "3-Star", 3}, {"Duskhawk Longbow", 325, 4.5, "3-Star", 3},
-    {"Thornpiercer Lance", 331, 4.5, "3-Star", 3}, {"Ironclad Polearm", 332, 4.5, "3-Star", 3}, {"Dreadwing Pike", 333, 4.5, "3-Star", 3},
-    {"Shadowspear", 334, 4.5, "3-Star", 3}, {"Serpentine Staff", 335, 4.5, "3-Star", 3},
-    {"Aetherglow Catalyst", 341, 4.5, "3-Star", 3}, {"Sages Tome", 342, 4.5, "3-Star", 3}, {"Moonlit Grimoire", 343, 4.5, "3-Star", 3},
-    {"Abyssal Codex", 344, 4.5, "3-Star", 3}, {"Starlight Journal", 345, 4.5, "3-Star", 3}
-}; 
+Weapon weapons_2star[4] = {
+    {"Iron Sword", 211, RARITY_2STAR, TYPE_SWORD, 80, 800, 80, 80},
+    {"Wooden Bow", 221, RARITY_2STAR, TYPE_BOW, 80, 800, 80, 80},
+    {"Iron Spear", 231, RARITY_2STAR, TYPE_SPEAR, 80, 800, 80, 80},
+    {"Wooden Staff", 241, RARITY_2STAR, TYPE_STAFF, 80, 800, 80, 80}
+};
 
-Item weapons_4star[WEAPONS_4_COUNT] = {
-    {"Stormbreaker", 411, 0.25, "4-Star", 4}, {"Soul Eater Blade", 412, 0.25, "4-Star", 4},
-    {"Starfall Bow", 421, 0.25, "4-Star", 4}, {"Frostbite Arch", 422, 0.25, "4-Star", 4},
-    {"Ares Lance", 431, 0.25, "4-Star", 4}, {"Crimson Polearm", 432, 0.25, "4-Star", 4},
-    {"Whisper Grimoire", 441, 0.25, "4-Star", 4}, {"Eternity Catalyst", 442, 0.25, "4-Star", 4}
-}; 
+Weapon weapons_3star[20] = {
+    {"Emberfang", 311, RARITY_3STAR, TYPE_SWORD, 85, 1050, 120, 75},
+    {"Ironleaf Rapier", 312, RARITY_3STAR, TYPE_SWORD, 90, 1000, 115, 85},
+    {"Duskwind Cutter", 313, RARITY_3STAR, TYPE_SWORD, 95, 950, 110, 95},
+    {"Stormvein Blade", 314, RARITY_3STAR, TYPE_SWORD, 100, 900, 105, 105},
+    {"Frostthorn Saber", 315, RARITY_3STAR, TYPE_SWORD, 105, 850, 100, 115},
+    {"Willowstrike", 321, RARITY_3STAR, TYPE_BOW, 120, 850, 80, 120},
+    {"Ashenwind Bow", 322, RARITY_3STAR, TYPE_BOW, 125, 800, 75, 130},
+    {"Shadowglint Recurve", 323, RARITY_3STAR, TYPE_BOW, 130, 750, 70, 140},
+    {"Bramblethorn Arch", 324, RARITY_3STAR, TYPE_BOW, 125, 850, 80, 130},
+    {"Duskhawk Longbow", 325, RARITY_3STAR, TYPE_BOW, 135, 700, 65, 145},
+    {"Thornpiercer", 331, RARITY_3STAR, TYPE_SPEAR, 115, 950, 95, 110},
+    {"Ashen Lance", 332, RARITY_3STAR, TYPE_SPEAR, 120, 900, 90, 115},
+    {"Duskrend Spear", 333, RARITY_3STAR, TYPE_SPEAR, 125, 850, 85, 120},
+    {"Brambletine", 334, RARITY_3STAR, TYPE_SPEAR, 130, 800, 80, 125},
+    {"Skyspike Glaive", 335, RARITY_3STAR, TYPE_SPEAR, 135, 750, 75, 130},
+    {"Shadowbark Staff", 341, RARITY_3STAR, TYPE_STAFF, 75, 1100, 130, 80},
+    {"Mistveil Rod", 342, RARITY_3STAR, TYPE_STAFF, 80, 1150, 125, 75},
+    {"Emberflare Cane", 343, RARITY_3STAR, TYPE_STAFF, 85, 1100, 120, 80},
+    {"Thornspire Staff", 344, RARITY_3STAR, TYPE_STAFF, 90, 1050, 115, 85},
+    {"Frostwind Scepter", 345, RARITY_3STAR, TYPE_STAFF, 95, 1000, 110, 90}
+};
 
-Item weapons_5star[WEAPONS_5_COUNT] = {
-    {"Excalibur", 511, 0.05, "5-Star", 5}, {"Cosmic Scythe", 521, 0.05, "5-Star", 5},
-    {"Celestial Spear", 531, 0.05, "5-Star", 5}, {"Void Grimoire", 541, 0.05, "5-Star", 5}
-}; 
+Weapon weapons_4star[8] = {
+    {"Buster Sword", 411, RARITY_4STAR, TYPE_SWORD, 110, 1250, 140, 100},
+    {"Rebellion", 412, RARITY_4STAR, TYPE_SWORD, 120, 1150, 130, 115},
+    {"Heilig Bogen", 421, RARITY_4STAR, TYPE_BOW, 140, 1050, 110, 140},
+    {"Sunray", 422, RARITY_4STAR, TYPE_BOW, 150, 950, 100, 155},
+    {"Heaven Splitter", 431, RARITY_4STAR, TYPE_SPEAR, 150, 1050, 100, 130},
+    {"War-Flaming Lance", 432, RARITY_4STAR, TYPE_SPEAR, 145, 1100, 105, 125},
+    {"Celestial Scepter", 441, RARITY_4STAR, TYPE_STAFF, 100, 1350, 150, 100},
+    {"Staff of Explosion", 442, RARITY_4STAR, TYPE_STAFF, 135, 1150, 130, 120}
+};
 
-Item char_5star[CHAR_COUNT] = {
-    {"Saber", 1, 1.0, "5-Star", 5}, // ID 1
-    {"Ishtar", 2, 1.0, "5-Star", 5}, // ID 2
-    {"Gilgamesh", 3, 1.0, "5-Star", 5}, // ID 3
-    {"Welt Yang", 4, 1.0, "5-Star", 5} // ID 4
-}; 
+Weapon weapons_5star[4] = {
+    {"Excalibur", 511, RARITY_5STAR, TYPE_SWORD, 140, 1500, 170, 130},
+    {"Maanna", 521, RARITY_5STAR, TYPE_BOW, 180, 1250, 130, 180},
+    {"EA", 531, RARITY_5STAR, TYPE_SPEAR, 200, 1150, 110, 160},
+    {"Star of Eden", 541, RARITY_5STAR, TYPE_STAFF, 160, 1400, 160, 150}
+};
 
-// Helpers (Remaining helpers condensed for file size)
-static int get_rand(int min, int max) {
-    return (rand() % (max - min + 1)) + min;
-}
-Item get_random_5star_weapon() { return weapons_5star[get_rand(0, WEAPONS_5_COUNT - 1)]; }
-Item get_random_character() { return char_5star[get_rand(0, CHAR_COUNT - 1)]; }
+Character characters[4] = {
+    {"Saber", 1},
+    {"Ishtar", 2},
+    {"Gilgamesh", 3},
+    {"Welt Yang", 4}
+};
 
-// Core pull logic (simplified for this demo)
-Item gacha_pull(int banner_type, PlayerData *data, int is_guaranteed_4star, int is_guaranteed_5star) {
-    // Pity logic update and pull logic... (omitted for brevity, assumed functional)
-    if (is_guaranteed_5star) {
-        data->pity_5star = 0; data->pity_4star = 0;
-        return (banner_type == 1) ? get_random_5star_weapon() : get_random_character();
-    }
-    if (is_guaranteed_4star) {
-        data->pity_4star = 0; data->pity_5star++;
-        return weapons_4star[get_rand(0, WEAPONS_4_COUNT - 1)];
-    }
+/* ===== OP CALCULATION (FIX #7) ===== */
 
-    float rnd = ((float)rand() / RAND_MAX) * 100.0f;
-
-    // 5-Star Check (0.7% total base chance)
-    if (rnd < 0.7f) {
-        return (banner_type == 1) ? get_random_5star_weapon() : get_random_character();
-    }
-
-    // 4-Star Check (2.7% total base chance)
-    if (rnd < 2.7f) {
-        return weapons_4star[get_rand(0, WEAPONS_4_COUNT - 1)];
-    }
-
-    // 3-Star (Rest of rolls)
-    return weapons_3star[get_rand(0, WEAPONS_3_COUNT - 1)];
+int calculate_op(Weapon *w) {
+    if (!w) return 0;
+    return w->atk + w->spd + w->def + (w->hp / 5);
 }
 
+/* ===== GACHA IMPLEMENTATION ===== */
 
-// Check if a character ID is already owned
-int character_owned(PlayerData *data, int id) {
-    for (int i = 0; i < MAX_CHARACTER_INV; i++) {
-        if (data->characterInv[i] == id) return 1;
+void gacha_init(void) {
+    srand((unsigned int)time(NULL));
+}
+
+void add_starter_weapons(PlayerData *p) {
+    if (p->inv_count == 0) {
+        printf("Adding starter weapons (all 2-stars)...\n");
+        for (int i = 0; i < 4; i++) {
+            if (p->inv_count < MAX_INVENTORY) {
+                p->inventory[p->inv_count++] = weapons_2star[i].id;
+                printf("Added: %s\n", weapons_2star[i].name);
+            }
+        }
+    }
+}
+
+void sort_inventory(PlayerData *p) {
+    if (p->inv_count <= 1) return;
+
+    for (int i = 0; i < p->inv_count - 1; i++) {
+        for (int j = 0; j < p->inv_count - i - 1; j++) {
+            Weapon *w1 = get_weapon_by_id(p->inventory[j]);
+            Weapon *w2 = get_weapon_by_id(p->inventory[j + 1]);
+            if (!w1 || !w2) continue;
+
+            int op1 = calculate_op(w1);
+            int op2 = calculate_op(w2);
+
+            if (w1->rarity > w2->rarity) {
+                int temp = p->inventory[j];
+                p->inventory[j] = p->inventory[j + 1];
+                p->inventory[j + 1] = temp;
+            } else if (w1->rarity == w2->rarity && op1 < op2) {
+                int temp = p->inventory[j];
+                p->inventory[j] = p->inventory[j + 1];
+                p->inventory[j + 1] = temp;
+            }
+        }
+    }
+}
+
+/* FIX #5 & #6: Updated load_player_data */
+void load_player_data(PlayerData *p) {
+    FILE *f = fopen("PlayerData.txt", "r");
+    p->gems = 0;
+    p->char_banner_first = 1;
+    p->pity_4star = 0;
+    p->pity_5star = 0;
+    p->inv_count = 0;
+    p->highest_stage_cleared = 0;
+
+    /* FIX #5: Initialize current character */
+    p->current_character = 0;
+
+    /* FIX #4 & #6: Initialize equipped weapons to 0 */
+    for (int i = 0; i < 5; i++) {
+        p->equipped_weapon[i] = 0;
+        p->character_level[i] = 1;
+    }
+
+    if (!f) {
+        printf("No PlayerData.txt found. Starting new game.\n");
+        add_starter_weapons(p);
+        return;
+    }
+
+    char line[1024];
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "GEMS:", 5) == 0) {
+            sscanf(line + 5, "%d", &p->gems);
+        } else if (strncmp(line, "CHAR_BANNER_FIRST:", 18) == 0) {
+            sscanf(line + 18, "%d", &p->char_banner_first);
+        } else if (strncmp(line, "PITY_4STAR:", 11) == 0) {
+            sscanf(line + 11, "%d", &p->pity_4star);
+        } else if (strncmp(line, "PITY_5STAR:", 11) == 0) {
+            sscanf(line + 11, "%d", &p->pity_5star);
+        } else if (strncmp(line, "HIGHEST_STAGE:", 14) == 0) {
+            sscanf(line + 14, "%d", &p->highest_stage_cleared);
+        } else if (strncmp(line, "CURRENT_CHARACTER:", 18) == 0) {
+            sscanf(line + 18, "%d", &p->current_character);
+        } else if (strncmp(line, "EQUIPPED_WEAPONS:", 16) == 0) {
+            char *tok = strtok(line + 16, ",\n");
+            int idx = 1;
+            while (tok && idx <= 4) {
+                p->equipped_weapon[idx++] = atoi(tok);
+                tok = strtok(NULL, ",\n");
+            }
+        } else if (strncmp(line, "ITEMS:", 6) == 0) {
+            char *tok = strtok(line + 6, ",\n");
+            while (tok && p->inv_count < MAX_INVENTORY) {
+                p->inventory[p->inv_count++] = atoi(tok);
+                tok = strtok(NULL, ",\n");
+            }
+        }
+    }
+
+    fclose(f);
+
+    if (p->inv_count == 0) {
+        add_starter_weapons(p);
+    }
+}
+
+/* FIX #5 & #6: Updated save_player_data */
+void save_player_data(const PlayerData *p) {
+    FILE *f = fopen("PlayerData.txt", "w");
+    if (!f) {
+        printf("Error: could not save PlayerData.txt\n");
+        return;
+    }
+
+    fprintf(f, "GEMS:%d\n", p->gems);
+    fprintf(f, "CHAR_BANNER_FIRST:%d\n", p->char_banner_first);
+    fprintf(f, "PITY_4STAR:%d\n", p->pity_4star);
+    fprintf(f, "PITY_5STAR:%d\n", p->pity_5star);
+    fprintf(f, "HIGHEST_STAGE:%d\n", p->highest_stage_cleared);
+
+    /* FIX #5: Save current character selection */
+    fprintf(f, "CURRENT_CHARACTER:%d\n", p->current_character);
+
+    /* FIX #4 & #6: Save equipped weapons per character */
+    fprintf(f, "EQUIPPED_WEAPONS:");
+    for (int i = 1; i <= 4; i++) {
+        fprintf(f, "%d", p->equipped_weapon[i]);
+        if (i < 4) fprintf(f, ",");
+    }
+    fprintf(f, "\n");
+
+    /* Inventory */
+    fprintf(f, "ITEMS:");
+    for (int i = 0; i < p->inv_count; i++) {
+        fprintf(f, "%d", p->inventory[i]);
+        if (i < p->inv_count - 1) fprintf(f, ",");
+    }
+    fprintf(f, "\n");
+
+    fclose(f);
+}
+
+int has_item(const PlayerData *p, int id) {
+    for (int i = 0; i < p->inv_count; i++) {
+        if (p->inventory[i] == id) return 1;
     }
     return 0;
 }
 
-void process_pull_result(Item result, PlayerData *data, int *gems_earned) {
-    // Character ID's are typically < 300, Weapon ID's are >= 300
-    if (result.id < 300) { // Character Roll
-        if (character_owned(data, result.id)) {
-            *gems_earned += result.star_level * 50; 
-            printf(" -> Duplicate Character! %d Gems earned.", result.star_level * 50);
+Item pull_single(int banner_type, PlayerData *p) {
+    Item result;
+    memset(&result, 0, sizeof(Item));
+
+    if (p->pity_5star >= 99) {
+        p->pity_5star = 0;
+        p->pity_4star = 0;
+        if (banner_type == 1) {
+            int idx = rand() % 4;
+            strcpy(result.name, weapons_5star[idx].name);
+            result.id = weapons_5star[idx].id;
+            result.type = ITEM_WEAPON;
+            result.star = 5;
         } else {
-            // Find the next available slot in the character inventory
-            for(int i = 0; i < MAX_CHARACTER_INV; i++) {
-                if (data->characterInv[i] == 0) {
-                    data->characterInv[i] = result.id;
-                    printf(" -> [NEW CHARACTER! ID: %d]", result.id);
-                    // Crucial: If this is the first pull, set the main character slot 0
-                    if (data->characterInv[0] == 0) {
-                        data->characterInv[0] = result.id;
-                    }
-                    return;
+            int idx = rand() % 4;
+            strcpy(result.name, characters[idx].name);
+            result.id = characters[idx].id;
+            result.type = ITEM_CHARACTER;
+            result.star = 5;
+        }
+        return result;
+    }
+
+    if (p->pity_4star >= 9) {
+        p->pity_4star = 0;
+        p->pity_5star++;
+        int idx = rand() % 8;
+        strcpy(result.name, weapons_4star[idx].name);
+        result.id = weapons_4star[idx].id;
+        result.type = ITEM_WEAPON;
+        result.star = 4;
+        return result;
+    }
+
+    float rng = (float)rand() / (float)RAND_MAX * 100.0f;
+
+    if (rng < 1.0f) {
+        p->pity_5star = 0;
+        p->pity_4star = 0;
+        if (banner_type == 1) {
+            int idx = rand() % 4;
+            strcpy(result.name, weapons_5star[idx].name);
+            result.id = weapons_5star[idx].id;
+            result.type = ITEM_WEAPON;
+            result.star = 5;
+        } else {
+            int idx = rand() % 4;
+            strcpy(result.name, characters[idx].name);
+            result.id = characters[idx].id;
+            result.type = ITEM_CHARACTER;
+            result.star = 5;
+        }
+        return result;
+    }
+
+    if (rng < 10.0f) {
+        p->pity_4star = 0;
+        p->pity_5star++;
+        int idx = rand() % 8;
+        strcpy(result.name, weapons_4star[idx].name);
+        result.id = weapons_4star[idx].id;
+        result.type = ITEM_WEAPON;
+        result.star = 4;
+        return result;
+    }
+
+    p->pity_4star++;
+    p->pity_5star++;
+    int idx = rand() % 20;
+    strcpy(result.name, weapons_3star[idx].name);
+    result.id = weapons_3star[idx].id;
+    result.type = ITEM_WEAPON;
+    result.star = 3;
+    return result;
+}
+
+void show_status(const PlayerData *p) {
+    printf("\n===== PLAYER STATUS =====\n");
+    printf("Gems: %d\n", p->gems);
+    printf("4-stars Pity: %d/10\n", p->pity_4star);
+    printf("5-stars Pity: %d/100\n", p->pity_5star);
+    printf("Items Owned: %d\n", p->inv_count);
+    printf("==========================\n");
+}
+
+void banner_menu(PlayerData *p) {
+    while (1) {
+        show_status(p);
+        printf("\n=== GACHA MENU ===\n");
+        printf("1) Weapon Banner\n");
+        printf("2) Character Banner%s\n", p->char_banner_first ? " [FREE FIRST PULL]" : "");
+        printf("3) Add 1000 Gems (Debug)\n");
+        printf("4) Back to Main Menu\n");
+        printf("Choice: ");
+
+        int choice;
+        if (scanf("%d", &choice) != 1) {
+            while (getchar() != '\n');
+            continue;
+        }
+
+        if (choice == 4) return;
+
+        if (choice == 3) {
+            p->gems += 1000;
+            save_player_data(p);
+            printf("Added 1000 gems!\n");
+            continue;
+        }
+
+        if (choice != 1 && choice != 2) continue;
+
+        int is_free = (choice == 2 && p->char_banner_first);
+
+        show_status(p);
+        printf("\n=== %s ===\n", choice == 1 ? "WEAPON BANNER" : "CHARACTER BANNER");
+
+        if (is_free) {
+            printf("1) Single Pull (FREE - first time)\n");
+        } else {
+            printf("1) Single Pull (%d gems)\n", GEM_COST_SINGLE);
+        }
+
+        printf("2) 10-Pull (%d gems)\n", GEM_COST_TEN);
+        printf("3) Back\n");
+        printf("Choice: ");
+
+        int pull_choice;
+        if (scanf("%d", &pull_choice) != 1) {
+            while (getchar() != '\n');
+            continue;
+        }
+
+        if (pull_choice == 3) continue;
+        if (pull_choice != 1 && pull_choice != 2) continue;
+
+        int cost = is_free && pull_choice == 1 ? 0 : (pull_choice == 1 ? GEM_COST_SINGLE : GEM_COST_TEN);
+
+        if (p->gems < cost) {
+            printf("Not enough gems!\n");
+            continue;
+        }
+
+        p->gems -= cost;
+        int pulls = pull_choice == 1 ? 1 : 10;
+
+        if (is_free && pull_choice == 1) {
+            printf("\n--- FREE FIRST CHARACTER PULL ---\n");
+            int idx = rand() % 4;
+            Item it;
+            strcpy(it.name, characters[idx].name);
+            it.id = characters[idx].id;
+            it.type = ITEM_CHARACTER;
+            it.star = 5;
+            p->char_banner_first = 0;
+            p->pity_4star = 0;
+            p->pity_5star = 0;
+            printf("You pulled: %s [5-stars] (ID %d)\n", it.name, it.id);
+
+            if (!has_item(p, it.id) && p->inv_count < MAX_INVENTORY) {
+                p->inventory[p->inv_count++] = it.id;
+                printf("NEW!\n");
+            } else if (has_item(p, it.id)) {
+                p->gems += GEM_REFUND_DUPLICATE;
+                printf("DUPLICATE! +%d gems\n", GEM_REFUND_DUPLICATE);
+            }
+        } else if (pulls == 1) {
+            printf("\n--- SINGLE PULL ---\n");
+            Item it = pull_single(choice, p);
+            printf("You pulled: %s [%d-stars] (ID %d)\n", it.name, it.star, it.id);
+
+            if (!has_item(p, it.id) && p->inv_count < MAX_INVENTORY) {
+                p->inventory[p->inv_count++] = it.id;
+                printf("NEW!\n");
+            } else if (has_item(p, it.id)) {
+                p->gems += GEM_REFUND_DUPLICATE;
+                printf("DUPLICATE! +%d gems\n", GEM_REFUND_DUPLICATE);
+            }
+        } else {
+            printf("\n--- 10-PULL ---\n");
+            for (int i = 0; i < 10; i++) {
+                Item it = pull_single(choice, p);
+                printf("%d) %s [%d-stars] (ID %d) ", i+1, it.name, it.star, it.id);
+
+                if (!has_item(p, it.id) && p->inv_count < MAX_INVENTORY) {
+                    p->inventory[p->inv_count++] = it.id;
+                    printf("NEW\n");
+                } else if (has_item(p, it.id)) {
+                    p->gems += GEM_REFUND_DUPLICATE;
+                    printf("DUPLICATE +%d\n", GEM_REFUND_DUPLICATE);
+                } else {
+                    printf("INV FULL\n");
                 }
             }
-            printf(" -> [NEW CHARACTER! BUT CHARACTER INVENTORY IS FULL!]");
-        }
-    } else { // Weapon Roll (ID >= 300)
-        Weapon new_weapon = createWeapon(result.id);
-        if (addWeaponToInventory(&data->weaponInv, new_weapon) != -1) {
-            printf(" -> [NEW WEAPON ACQUIRED!]");
-        } else {
-            *gems_earned += result.star_level * 10;
-            printf(" -> [WEAPON INVENTORY FULL - Refund: %d gems]", result.star_level * 10);
-        }
-    }
-}
-
-// Function to handle the actual pull action (1 or 10 pull)
-void pull_menu(int banner_choice, PlayerData *data) {
-    int pull_choice;
-    while (1) {
-        printf("\n--- Pull Options ---\n");
-        // FIX: Displaying the FREE option only for a single Character Pull (choice 2)
-        int is_first_char_pull = (banner_choice == 2 && data->char_banner_first == 1);
-        printf("1. Single Pull (%s)\n", is_first_char_pull ? "FREE - First Time Bonus!" : "100 gems");
-        printf("2. 10-Pull (1000 gems)\n");
-        printf("3. Back\nChoice: ");
-        if (scanf("%d", &pull_choice) != 1) { while(getchar() != '\n'); continue; }
-        if (pull_choice == 3) return;
-        if (pull_choice != 1 && pull_choice != 2) { printf("Invalid choice.\n"); continue; }
-
-        // Determine cost: 0 if first single char pull, otherwise 100/1000
-        int cost = is_first_char_pull ? 0 : (pull_choice == 1 ? 100 : 1000);
-        int pull_count = pull_choice == 1 ? 1 : 10;
-        
-        if (data->gems < cost) { 
-            printf("\nInsufficient gems! You need %d gems but only have %d.\n", cost, data->gems); 
-            continue; 
-        }
-        data->gems -= cost;
-        int gems_earned = 0;
-        
-        printf("\n=== Pull Results ===\n");
-
-        for (int i = 0; i < pull_count; i++) {
-            Item result;
-
-            if (is_first_char_pull && i == 0) {
-                // *** FREE FIRST CHARACTER PULL LOGIC (Only runs on the very first pull) ***
-                result = get_random_character();
-                data->char_banner_first = 0; // Disable flag after use
-                data->pity_5star = 0; data->pity_4star = 0;
-                printf("%2d. %s [%s] (ID: %d) (FREE PULL)", i+1, result.name, result.rarity, result.id);
-            } else {
-                int is_guaranteed_4 = (data->pity_4star >= 9);
-                int is_guaranteed_5 = (data->pity_5star >= 99);
-                result = gacha_pull(banner_choice, data, is_guaranteed_4, is_guaranteed_5);
-                printf("%2d. %s [%s] (ID: %d)", i+1, result.name, result.rarity, result.id);
-            }
-            
-            process_pull_result(result, data, &gems_earned);
-            printf("\n");
-        }
-        
-        if (gems_earned > 0) printf("\nTotal gems earned from duplicates: %d\n", gems_earned);
-        save_player_data(data);
-        printf("Progress saved!\n");
-    }
-}
-
-// Function to save player data
-void save_player_data(PlayerData *data) {
-    // (Implementation omitted for brevity, assumed functional using fwrite)
-    FILE *fp = fopen("./player_data.bin", "wb");
-    if (fp == NULL) {
-        printf("Error: Could not open player_data.bin for writing.\n");
-        return;
-    }
-    fwrite(data, sizeof(PlayerData), 1, fp);
-    fclose(fp);
-}
-
-// Function to load player data
-void load_player_data(PlayerData *data) {
-    // Default initialization: Crucial for "first pull" flag
-    data->gems = 5000;
-    data->char_banner_first = 1; // Default to FREE first pull ON
-    data->pity_4star = 0;
-    data->pity_5star = 0;
-    data->weaponInv.count = 0;
-    for(int i = 0; i < MAX_CHARACTER_INV; i++) {
-        data->characterInv[i] = 0; // 0 means slot is empty
-    }
-
-    FILE *fp = fopen("./player_data.bin", "rb");
-    if (fp == NULL) {
-        printf("player_data.bin not found. Initializing new player data.\n");
-        return; // Return with defaults set above
-    }
-    fread(data, sizeof(PlayerData), 1, fp);
-    fclose(fp);
-}
-
-
-// Menu functions (banner_menu and inventory_menu declared in gacha.h)
-void banner_menu(PlayerData *data) {
-    int banner_choice;
-    while (1) {
-        // Load the character to display its equipped weapon
-        Character current_char = createCharacter(data->characterInv[0] == 0 ? CHAR_DEFAULT : data->characterInv[0]);
-        loadCharacter(&current_char);
-
-        printf("\n=== Gacha Pull System ===\n");
-        printf("Gems: %d | 4-Star Pity: %d | 5-Star Pity: %d\n", data->gems, data->pity_4star, data->pity_5star);
-        printf("Equipped Weapon: %s\n", current_char.equippedWeapon.name);
-        
-        printf("\nSelect Option:\n");
-        printf("1. Weapon Banner\n");
-        printf("2. Character Banner (%s)\n", data->char_banner_first == 1 ? "FREE FIRST PULL!" : "100/1000 gems");
-        printf("3. ** VIEW INVENTORY / EQUIP WEAPON **\n");
-        printf("4. Go Back to Main Menu\n");
-        printf("Choice: ");
-        
-        int choice;
-        if (scanf("%d", &choice) != 1) { 
-            while (getchar() != '\n');
-            continue; 
         }
 
-        if (choice == 1 || choice == 2) {
-            pull_menu(choice, data); 
-        } else if (choice == 3) {
-            // FIX: This now relies on the inventory_menu function provided in main.c
-            // It needs the logic from main.c to compile if this function wasn't moved here.
-            inventory_menu(data);
-        } else if (choice == 4) {
-            save_player_data(data);
-            return;
-        } else {
-            printf("Invalid choice.\n");
-        }
-        
+        sort_inventory(p);
+        save_player_data(p);
+        printf("\nProgress saved!\n");
+        printf("Press Enter to continue...");
         while (getchar() != '\n');
     }
 }
-
-// FIX: Removing the problematic in-file inventory_menu definition from gacha.c
-// It must be defined once (in main.c) and declared in gacha.h.
-/*
-void inventory_menu(PlayerData *data) {
-    // ... problematic inventory logic removed ...
-}
-*/
