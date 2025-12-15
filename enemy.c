@@ -436,42 +436,42 @@ Enemy create_enemy(EnemyType type) {
     switch (type) {
         case ENEMY_SLIME:
             strcpy(e.name, "Slime");
-            e.atk = 60; e.hp = 400; e.def = 40; e.spd = 50;
+            e.atk = 60; e.hp = 400; e.def = 80; e.spd = 100;
             break;
 
         case ENEMY_BANDIT:
             strcpy(e.name, "Bandit");
-            e.atk = 120; e.hp = 300; e.def = 30; e.spd = 90;
+            e.atk = 120; e.hp = 300; e.def = 70; e.spd = 150;
             break;
 
         case ENEMY_BEAST:
             strcpy(e.name, "Beast");
-            e.atk = 100; e.hp = 600; e.def = 100; e.spd = 60;
+            e.atk = 100; e.hp = 600; e.def = 140; e.spd = 120;
             break;
 
         case ENEMY_GORGON:
             strcpy(e.name, "Gorgon");
-            e.atk = 80; e.hp = 350; e.def = 80; e.spd = 70;
+            e.atk = 80; e.hp = 350; e.def = 120; e.spd = 130;
             break;
 
         case ENEMY_WRAITH:
             strcpy(e.name, "Wraith");
-            e.atk = 110; e.hp = 450; e.def = 50; e.spd = 100;
+            e.atk = 110; e.hp = 450; e.def = 100; e.spd = 160;
             break;
 
         case BOSS_SHADOW_KNIGHT:
             strcpy(e.name, "Shadow Knight");
-            e.atk = 140; e.hp = 1000; e.def = 120; e.spd = 100;
+            e.atk = 140; e.hp = 1000; e.def = 200; e.spd = 180;
             break;
 
         case BOSS_PHOENIX_LORD:
             strcpy(e.name, "Phoenix Lord");
-            e.atk = 160; e.hp = 900; e.def = 100; e.spd = 110;
+            e.atk = 160; e.hp = 900; e.def = 250; e.spd = 190;
             break;
 
         case BOSS_ETERNAL_WARDEN:
             strcpy(e.name, "Eternal Warden");
-            e.atk = 180; e.hp = 1100; e.def = 140; e.spd = 120;
+            e.atk = 180; e.hp = 1100; e.def = 300; e.spd = 200;
             break;
 
         default:

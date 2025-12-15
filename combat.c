@@ -1,13 +1,11 @@
-/* combat.c */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "combat.h"
 #include "weapon.h"
-#include "data.h"   /* clamp(), random_percent(), constants */
+#include "data.h"
 
-/* WeaponSkill has no cooldown field in weapon.h, so weapon skill cooldown is fixed here. */
 #ifndef WEAPON_SKILL_COOLDOWN
 #define WEAPON_SKILL_COOLDOWN 4
 #endif
@@ -44,7 +42,23 @@ static int get_effective_player_def(const CombatState *state) {
     return def;
 }
 
-/* Apply ATK debuff/buff to an already-computed damage number. */
+static int get_effective_enemy_spd(const Enemy *e) {
+    int spd = e->spd;
+
+    if (e->status.spd_debuff_turns > 0) {
+        spd = (spd * (100 - e->status.spd_debuff_percent)) / 100;
+    }
+    if (e->status.spd_buff_turns > 0) {
+        spd = (spd * (100 + e->status.spd_buff_percent)) / 100;
+    }
+    if (e->status.slow_turns > 0) {
+        spd = (spd * (100 - e->status.slow_percent)) / 100;
+    }
+
+    if (spd < 1) spd = 1;
+    return spd;
+}
+
 static int apply_player_atk_modifiers_to_damage(const CombatState *state, int damage) {
     if (state->player.status.atk_debuff_turns > 0) {
         damage = (damage * (100 - state->player.status.atk_debuff_percent)) / 100;
@@ -171,6 +185,14 @@ int calculate_hit_chance(int attacker_spd, int target_spd, Enemy *target_enemy) 
     return clamp(chance, 0, 100);
 }
 
+static int calculate_enemy_hit_chance(int enemy_spd, const CombatState *state) {
+    int attacker_spd = enemy_spd;
+    int target_spd = get_effective_player_spd(state);
+
+    int chance = HIT_BASE_CHANCE + (int)((attacker_spd - target_spd) * SPD_HIT_FACTOR);
+    return clamp(chance, 0, 100);
+}
+
 /* ===== DEFENSE REDUCTION ===== */
 int apply_def_reduction(int base_damage, int def) {
     int denominator = 100 + (int)(def * DEF_REDUCTION_FACTOR);
@@ -191,12 +213,15 @@ int get_effective_enemy_damage(Enemy *e, int base_damage_percent) {
 }
 
 /* ===== DAMAGE APPLICATION ===== */
-void apply_damage(CombatState *state, int target_enemy_idx, int damage) {
-    if (target_enemy_idx < 0 || target_enemy_idx >= state->num_enemies) return;
+/* MODIFIED: Now returns 1 if hit, 0 if missed */
+int apply_damage(CombatState *state, int target_enemy_idx, int damage) {
+    if (target_enemy_idx < 0 || target_enemy_idx >= state->num_enemies) return 0;  /* Invalid target */
 
     Enemy *e = &state->enemies[target_enemy_idx];
 
-    /* Apply player's ATK debuff/buff to outgoing damage */
+    /* Do not attack dead enemies */
+    if (e->current_hp <= 0) return 0;
+
     damage = apply_player_atk_modifiers_to_damage(state, damage);
 
     int attacker_spd = get_effective_player_spd(state);
@@ -204,7 +229,7 @@ void apply_damage(CombatState *state, int target_enemy_idx, int damage) {
 
     if (!random_percent(hit_chance)) {
         printf("%s MISSED!\n", state->player.name);
-        return;
+        return 0;  /* MISSED */
     }
 
     int enemy_def = e->def;
@@ -222,9 +247,22 @@ void apply_damage(CombatState *state, int target_enemy_idx, int damage) {
     if (e->current_hp < 0) e->current_hp = 0;
 
     printf("%s takes %d damage! (HP: %d/%d)\n", e->name, reduced_damage, e->current_hp, e->max_hp);
+    return 1;  /* HIT */
 }
 
-void apply_player_damage(CombatState *state, int damage) {
+/* MODIFIED: Now returns int (1 = hit, 0 = missed) */
+int apply_player_damage(CombatState *state, int damage, Enemy *attacker) {
+    /* Hit chance check for enemy attacks */
+    if (attacker != NULL) {
+        int enemy_spd = get_effective_enemy_spd(attacker);
+        int hit_chance = calculate_enemy_hit_chance(enemy_spd, state);
+
+        if (!random_percent(hit_chance)) {
+            printf("%s MISSED!\n", attacker->name);
+            return 0;  /* MISSED */
+        }
+    }
+
     if (state->player_guarding) {
         damage = (damage * (100 - GUARD_DAMAGE_REDUCTION)) / 100;
         printf("Guard! Reduced damage to %d\n", damage);
@@ -236,7 +274,6 @@ void apply_player_damage(CombatState *state, int damage) {
     state->player_current_hp -= reduced_damage;
     if (state->player_current_hp < 0) state->player_current_hp = 0;
 
-    /* Effective max HP (temporary reduction + Eternal Warden judgment) */
     int effective_max_hp = state->player.hp;
 
     if (state->player_max_hp_modified_turns > 0 && state->player_max_hp_modified > 0) {
@@ -252,10 +289,15 @@ void apply_player_damage(CombatState *state, int damage) {
 
     printf("%s takes %d damage! (HP: %d/%d)\n",
            state->player.name, reduced_damage, state->player_current_hp, effective_max_hp);
+    
+    return 1;  /* HIT */
 }
 
 /* ===== STATUS EFFECT APPLICATION (ENEMY TARGET) ===== */
 void apply_burn(Enemy *e, int damage_per_turn, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.burn_turns = duration;
     e->status.burn_damage_per_turn = damage_per_turn;
 
@@ -271,55 +313,80 @@ void apply_burn(Enemy *e, int damage_per_turn, int duration) {
 }
 
 void apply_stun_effect(Enemy *e, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.stunned_turns = duration;
     printf("%s is stunned for %d turn(s)!\n", e->name, duration);
 }
 
 void apply_atk_debuff(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.atk_debuff_turns = duration;
     e->status.atk_debuff_percent = percent;
     printf("%s ATK reduced by %d%% for %d turns!\n", e->name, percent, duration);
 }
 
 void apply_def_debuff(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.def_debuff_turns = duration;
     e->status.def_debuff_percent = percent;
     printf("%s DEF reduced by %d%% for %d turns!\n", e->name, percent, duration);
 }
 
 void apply_spd_debuff(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.spd_debuff_turns = duration;
     e->status.spd_debuff_percent = percent;
     printf("%s SPD reduced by %d%% for %d turns!\n", e->name, percent, duration);
 }
 
 void apply_slow_effect(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.slow_turns = duration;
     e->status.slow_percent = percent;
     printf("%s is slowed by %d%% for %d turns!\n", e->name, percent, duration);
 }
 
-/* ===== ENEMY BUFF FUNCTIONS ===== */
 void apply_atk_buff(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.atk_buff_turns = duration;
     e->status.atk_buff_percent = percent;
     printf("%s ATK increased by %d%% for %d turns!\n", e->name, percent, duration);
 }
 
 void apply_def_buff(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.def_buff_turns = duration;
     e->status.def_buff_percent = percent;
     printf("%s DEF increased by %d%% for %d turns!\n", e->name, percent, duration);
 }
 
 void apply_spd_buff(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.spd_buff_turns = duration;
     e->status.spd_buff_percent = percent;
     printf("%s SPD increased by %d%% for %d turns!\n", e->name, percent, duration);
 }
 
-/* ===== SPECIAL EFFECT FUNCTIONS (ENEMY TARGET) ===== */
 void apply_healing_reduction(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.healing_reduction_turns = duration;
     e->status.healing_reduction_percent = percent;
     printf("%s healing effectiveness reduced by %d%% for %d turns!\n", e->name, percent, duration);
@@ -332,6 +399,9 @@ void apply_max_hp_reduction(CombatState *state, int enemy_idx, int percent) {
 }
 
 void apply_fire_resistance_down(Enemy *e, int percent, int duration) {
+
+    if (e == NULL || e->current_hp <= 0) return;
+
     e->status.fire_resist_down_turns = duration;
     e->status.fire_resist_down_percent = percent;
     printf("%s fire resistance reduced by %d%% for %d turns!\n", e->name, percent, duration);
@@ -393,7 +463,6 @@ static void apply_player_fire_resistance_down(CombatState *state, int percent, i
     state->player.status.fire_resist_down_turns = duration;
     state->player.status.fire_resist_down_percent = percent;
 
-    /* If already burning, increase burn tick to reflect vulnerability (simple model). */
     if (state->player.status.burn_turns > 0) {
         state->player.status.burn_damage_per_turn =
             (state->player.status.burn_damage_per_turn * (100 + percent)) / 100;
@@ -402,11 +471,153 @@ static void apply_player_fire_resistance_down(CombatState *state, int percent, i
     printf("%s fire resistance reduced by %d%% for %d turns!\n", state->player.name, percent, duration);
 }
 
+/* ===== PLAYER BUFF/HEAL HELPERS ===== */
+static void apply_player_atk_buff(CombatState *state, int percent, int duration) {
+    state->player.status.atk_buff_turns = duration;
+    state->player.status.atk_buff_percent = percent;
+    printf("%s ATK increased by %d%% for %d turns!\n", state->player.name, percent, duration);
+}
+
+static void apply_player_def_buff(CombatState *state, int percent, int duration) {
+    state->player.status.def_buff_turns = duration;
+    state->player.status.def_buff_percent = percent;
+    printf("%s DEF increased by %d%% for %d turns!\n", state->player.name, percent, duration);
+}
+
+static void apply_player_spd_buff(CombatState *state, int percent, int duration) {
+    state->player.status.spd_buff_turns = duration;
+    state->player.status.spd_buff_percent = percent;
+    printf("%s SPD increased by %d%% for %d turns!\n", state->player.name, percent, duration);
+}
+
+static void heal_player_percent(CombatState *state, int percent) {
+    int heal = (state->player.hp * percent) / 100;
+
+    if (state->player.status.healing_reduction_turns > 0) {
+        heal = (heal * (100 - state->player.status.healing_reduction_percent)) / 100;
+    }
+
+    state->player_current_hp += heal;
+    if (state->player_current_hp > state->player.hp) state->player_current_hp = state->player.hp;
+
+    printf("%s heals for %d HP! (HP: %d/%d)\n", state->player.name, heal, state->player_current_hp, state->player.hp);
+}
+
+/* ===== CHARACTER SKILL APPLICATION ===== */
+static void apply_character_skill(CombatState *state, int skill_num) {
+    const CharacterSkillData *sd = get_character_skill_data(state->player.id, skill_num);
+    if (sd == NULL) {
+        printf("Unknown character skill!\n");
+        return;
+    }
+
+    /* Self effects always apply */
+    if (sd->self_heal_percent > 0) {
+        heal_player_percent(state, sd->self_heal_percent);
+    }
+    if (sd->self_atk_buff_percent > 0 && sd->self_atk_buff_duration > 0) {
+        apply_player_atk_buff(state, sd->self_atk_buff_percent, sd->self_atk_buff_duration);
+    }
+    if (sd->self_def_buff_percent > 0 && sd->self_def_buff_duration > 0) {
+        apply_player_def_buff(state, sd->self_def_buff_percent, sd->self_def_buff_duration);
+    }
+    if (sd->self_spd_buff_percent > 0 && sd->self_spd_buff_duration > 0) {
+        apply_player_spd_buff(state, sd->self_spd_buff_percent, sd->self_spd_buff_duration);
+    }
+
+    /* No damage / no enemy effects */
+    if (sd->damage_percent <= 0) return;
+
+    int dmg = (state->player.atk * sd->damage_percent) / 100;
+
+    if (sd->target_type == SKILL_TARGET_SINGLE_ENEMY) {
+        int target = 0;
+        if (state->num_enemies > 1) {
+            printf("Target enemy (0-%d): ", state->num_enemies - 1);
+            if (scanf("%d", &target) != 1) {
+                while (getchar() != '\n') {}
+                return;
+            }
+        }
+        target = clamp(target, 0, state->num_enemies - 1);
+
+        int hit = apply_damage(state, target, dmg);
+        if (!hit) return;
+
+        Enemy *e = &state->enemies[target];
+
+        /* Stun */
+        if (sd->stun_chance > 0 && sd->stun_duration > 0 && random_percent(sd->stun_chance)) {
+            apply_stun_effect(e, sd->stun_duration);
+        }
+
+        /* Burn */
+        if (sd->burn_chance > 0 && sd->burn_damage_percent > 0 && sd->burn_duration > 0 && random_percent(sd->burn_chance)) {
+            int burn = (state->player.atk * sd->burn_damage_percent) / 100;
+            apply_burn(e, burn, sd->burn_duration);
+        }
+
+        /* Debuffs */
+        if (sd->atk_debuff_percent > 0 && sd->atk_debuff_duration > 0) {
+            apply_atk_debuff(e, sd->atk_debuff_percent, sd->atk_debuff_duration);
+        }
+        if (sd->def_debuff_percent > 0 && sd->def_debuff_duration > 0) {
+            apply_def_debuff(e, sd->def_debuff_percent, sd->def_debuff_duration);
+        }
+        if (sd->spd_debuff_percent > 0 && sd->spd_debuff_duration > 0) {
+            if (sd->spd_debuff_chance > 0) {
+                if (random_percent(sd->spd_debuff_chance)) {
+                    apply_spd_debuff(e, sd->spd_debuff_percent, sd->spd_debuff_duration);
+                }
+            } else {
+                apply_spd_debuff(e, sd->spd_debuff_percent, sd->spd_debuff_duration);
+            }
+        }
+
+    } else if (sd->target_type == SKILL_TARGET_ALL_ENEMIES) {
+        for (int i = 0; i < state->num_enemies; i++) {
+            int hit = apply_damage(state, i, dmg);
+            if (!hit) continue;
+
+            Enemy *e = &state->enemies[i];
+
+            /* Stun (per target) */
+            if (sd->stun_chance > 0 && sd->stun_duration > 0 && random_percent(sd->stun_chance)) {
+                apply_stun_effect(e, sd->stun_duration);
+            }
+
+            /* Burn (per target) */
+            if (sd->burn_chance > 0 && sd->burn_damage_percent > 0 && sd->burn_duration > 0 && random_percent(sd->burn_chance)) {
+                int burn = (state->player.atk * sd->burn_damage_percent) / 100;
+                apply_burn(e, burn, sd->burn_duration);
+            }
+
+            /* Debuffs (per target) */
+            if (sd->atk_debuff_percent > 0 && sd->atk_debuff_duration > 0) {
+                apply_atk_debuff(e, sd->atk_debuff_percent, sd->atk_debuff_duration);
+            }
+            if (sd->def_debuff_percent > 0 && sd->def_debuff_duration > 0) {
+                apply_def_debuff(e, sd->def_debuff_percent, sd->def_debuff_duration);
+            }
+            if (sd->spd_debuff_percent > 0 && sd->spd_debuff_duration > 0) {
+                if (sd->spd_debuff_chance > 0) {
+                    if (random_percent(sd->spd_debuff_chance)) {
+                        apply_spd_debuff(e, sd->spd_debuff_percent, sd->spd_debuff_duration);
+                    }
+                } else {
+                    apply_spd_debuff(e, sd->spd_debuff_percent, sd->spd_debuff_duration);
+                }
+            }
+        }
+    }
+}
+
+
+
 /* ===== TURN UPDATE ===== */
 void update_combat_turn(CombatState *state) {
     state->player_guarding = 0;
 
-    /* Apply player burn damage */
     if (state->player.status.burn_turns > 0) {
         state->player_current_hp -= state->player.status.burn_damage_per_turn;
         if (state->player_current_hp < 0) state->player_current_hp = 0;
@@ -420,7 +631,6 @@ void update_combat_turn(CombatState *state) {
                state->player.hp);
     }
 
-    /* Decrease player durations */
     if (state->player.status.stunned_turns > 0) state->player.status.stunned_turns--;
     if (state->player.status.atk_debuff_turns > 0) state->player.status.atk_debuff_turns--;
     if (state->player.status.def_debuff_turns > 0) state->player.status.def_debuff_turns--;
@@ -433,7 +643,6 @@ void update_combat_turn(CombatState *state) {
     if (state->player.status.def_buff_turns > 0) state->player.status.def_buff_turns--;
     if (state->player.status.spd_buff_turns > 0) state->player.status.spd_buff_turns--;
 
-    /* Temporary max HP reduction duration */
     if (state->player_max_hp_modified_turns > 0) {
         state->player_max_hp_modified_turns--;
         if (state->player_max_hp_modified_turns == 0) {
@@ -441,7 +650,6 @@ void update_combat_turn(CombatState *state) {
         }
     }
 
-    /* Update enemies */
     for (int i = 0; i < state->num_enemies; i++) {
         Enemy *e = &state->enemies[i];
 
@@ -476,7 +684,6 @@ void update_combat_turn(CombatState *state) {
         if (e->status.fire_resist_down_turns > 0) e->status.fire_resist_down_turns--;
     }
 
-    /* Decrement cooldowns once per turn */
     if (state->skill1_cooldown > 0) state->skill1_cooldown--;
     if (state->skill2_cooldown > 0) state->skill2_cooldown--;
     if (state->weapon_skill_cooldown > 0) state->weapon_skill_cooldown--;
@@ -519,6 +726,7 @@ void display_combat_state(const CombatState *state) {
 }
 
 /* ===== ENEMY SKILL APPLICATION ===== */
+/* MODIFIED: Check if attack hit before applying status effects */
 void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
     if (enemy_idx < 0 || enemy_idx >= state->num_enemies) return;
 
@@ -532,22 +740,30 @@ void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
 
     printf("%s uses %s!\n", e->name, skill->name);
 
-    /* Damage */
+    /* Damage and hit check */
     int damage = 0;
+    int attack_hit = 1;  /* Assume hit if no damage component */
+    
     if (skill->damage_percent > 0) {
         damage = get_effective_enemy_damage(e, skill->damage_percent);
-        apply_player_damage(state, damage);
+        attack_hit = apply_player_damage(state, damage, e);  /* Returns 1 if hit, 0 if miss */
     }
 
-    /* Drain */
-    if (skill->drain_percent > 0) {
+    /* ONLY APPLY EFFECTS IF ATTACK HIT */
+    if (!attack_hit) {
+        printf("All effects avoided!\n");
+        return;  /* Exit early if attack missed */
+    }
+
+    /* Drain (only if attack hit) */
+    if (skill->drain_percent > 0 && damage > 0) {
         int heal_amount = (damage * skill->drain_percent) / 100;
         e->current_hp += heal_amount;
         if (e->current_hp > e->max_hp) e->current_hp = e->max_hp;
         printf("%s drains %d HP from the player!\n", e->name, heal_amount);
     }
 
-    /* Status effects: APPLY TO PLAYER */
+    /* Status effects on player (only if attack hit) */
     if (skill->stun_chance > 0 && random_percent(skill->stun_chance)) {
         apply_player_stun(state, skill->stun_duration);
     }
@@ -573,7 +789,7 @@ void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
         apply_player_spd_debuff(state, skill->spd_debuff_percent, skill->spd_debuff_duration);
     }
 
-    /* Self buffs remain on the enemy */
+    /* Self buffs always apply (enemy buffs self regardless of hit) */
     if (skill->atk_buff_percent > 0) {
         apply_atk_buff(e, skill->atk_buff_percent, skill->atk_buff_duration);
     }
@@ -586,7 +802,7 @@ void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
         apply_spd_buff(e, skill->spd_buff_percent, skill->spd_buff_duration);
     }
 
-    /* Healing */
+    /* Self healing always applies */
     if (skill->heal_percent > 0) {
         int heal_amount = (e->max_hp * skill->heal_percent) / 100;
         e->current_hp += heal_amount;
@@ -594,15 +810,13 @@ void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
         printf("%s heals for %d HP!\n", e->name, heal_amount);
     }
 
-    /* Special effects */
+    /* Special effects (only if attack hit) */
     if (skill->max_hp_reduction_percent > 0) {
-        /* Eternal Warden: permanent, tracked per enemy slot */
         if (e->type == BOSS_ETERNAL_WARDEN && skill_num == 2) {
             apply_max_hp_reduction(state, enemy_idx, skill->max_hp_reduction_percent);
         } else {
-            /* Non-warden: treat as temporary max HP reduction using CombatState fields */
             state->player_max_hp_modified = skill->max_hp_reduction_percent;
-            state->player_max_hp_modified_turns = 3; /* fixed: since EnemySkill lacks duration */
+            state->player_max_hp_modified_turns = 3;
             printf("Player max HP reduced by %d%% for %d turns!\n",
                    state->player_max_hp_modified, state->player_max_hp_modified_turns);
         }
@@ -616,9 +830,7 @@ void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
         apply_player_fire_resistance_down(state, skill->fire_resist_down_percent, skill->fire_resist_down_duration);
     }
 
-    /* ===== HARD-CODED SPECIALS (match skill text) ===== */
-
-    /* Eternal Warden skill 1: reset player cooldowns */
+    /* Hard-coded specials */
     if (e->type == BOSS_ETERNAL_WARDEN && skill_num == 1) {
         state->skill1_cooldown = 0;
         state->skill2_cooldown = 0;
@@ -626,10 +838,9 @@ void apply_enemy_skill(CombatState *state, int enemy_idx, int skill_num) {
         printf("Player cooldowns have been reset!\n");
     }
 
-    /* Eternal Warden skill 3: random status (50% chance) for 2-3 turns */
     if (e->type == BOSS_ETERNAL_WARDEN && skill_num == 3) {
         if (random_percent(50)) {
-            int dur = 2 + (rand() % 2); /* 2-3 turns */
+            int dur = 2 + (rand() % 2);
             int pick = rand() % 4;
 
             if (pick == 0) {
@@ -653,7 +864,6 @@ int run_combat_loop(CombatState *state) {
     display_combat_state(state);
 
     while (1) {
-        /* Win/Loss check */
         int all_dead = 1;
         for (int i = 0; i < state->num_enemies; i++) {
             if (state->enemies[i].current_hp > 0) {
@@ -672,7 +882,6 @@ int run_combat_loop(CombatState *state) {
             return 0;
         }
 
-        /* If player is stunned, skip player action but enemies still act */
         if (state->player.status.stunned_turns > 0) {
             printf("\n%s is stunned and cannot act!\n", state->player.name);
 
@@ -691,7 +900,7 @@ int run_combat_loop(CombatState *state) {
                 if (action == 0) {
                     int dmg = get_effective_enemy_damage(&state->enemies[i], NORMAL_ATTACK_PERCENT);
                     printf("%s attacks %s!\n", state->enemies[i].name, state->player.name);
-                    apply_player_damage(state, dmg);
+                    apply_player_damage(state, dmg, &state->enemies[i]);
                 } else {
                     apply_enemy_skill(state, i, action);
                 }
@@ -699,11 +908,13 @@ int run_combat_loop(CombatState *state) {
                 if (state->player_current_hp <= 0) break;
             }
 
+        /* FIXED: Update turn counters AFTER enemies have acted */
+        update_combat_turn(state);
+
             display_combat_state(state);
             continue;
         }
 
-        /* Player menu */
         printf("\nPlayer Actions:\n");
         printf("1) Normal Attack (50%% ATK)\n");
         printf("2) Guard (35%% DMG reduction)\n");
@@ -756,71 +967,9 @@ int run_combat_loop(CombatState *state) {
             }
 
             printf("\n%s uses %s!\n", state->player.name, s1.name);
-
-            if (state->player.id == 1) {
-                /* Saber: Heal + DEF buff */
-                int heal = (state->player.hp * 40) / 100;
-
-                if (state->player.status.healing_reduction_turns > 0) {
-                    heal = (heal * (100 - state->player.status.healing_reduction_percent)) / 100;
-                }
-
-                state->player_current_hp += heal;
-                if (state->player_current_hp > state->player.hp) state->player_current_hp = state->player.hp;
-
-                printf("%s heals for %d HP! (HP: %d/%d)\n",
-                       state->player.name, heal, state->player_current_hp, state->player.hp);
-
-                state->player.status.def_buff_turns = 2;
-                state->player.status.def_buff_percent = 50;
-                printf("%s DEF increased by 50%% for 2 turns!\n", state->player.name);
-
-            } else if (state->player.id == 2) {
-                /* Ishtar: Single-target burn attack */
-                int target = 0;
-                if (state->num_enemies > 1) {
-                    printf("Target enemy (0-%d): ", state->num_enemies - 1);
-                    scanf("%d", &target);
-                }
-                target = clamp(target, 0, state->num_enemies - 1);
-
-                int dmg = (state->player.atk * 180) / 100;
-                printf("%s throws gems at %s!\n", state->player.name, state->enemies[target].name);
-                apply_damage(state, target, dmg);
-
-                apply_burn(&state->enemies[target], (state->player.atk * 40) / 100, 3);
-
-            } else if (state->player.id == 3) {
-                /* Gilgamesh: AOE with stun */
-                int dmg = (state->player.atk * 130) / 100;
-                for (int i = 0; i < state->num_enemies; i++) {
-                    apply_damage(state, i, dmg);
-
-                    if (random_percent(50)) {
-                        state->enemies[i].status.stunned_turns = 1;
-                        printf("%s is stunned for 1 turn!\n", state->enemies[i].name);
-                    }
-                }
-
-            } else if (state->player.id == 4) {
-                /* Welt: Single-target DEF debuff */
-                int target = 0;
-                if (state->num_enemies > 1) {
-                    printf("Target enemy (0-%d): ", state->num_enemies - 1);
-                    scanf("%d", &target);
-                }
-                target = clamp(target, 0, state->num_enemies - 1);
-
-                int dmg = (state->player.atk * 150) / 100;
-                apply_damage(state, target, dmg);
-
-                state->enemies[target].status.def_debuff_turns = 3;
-                state->enemies[target].status.def_debuff_percent = 70;
-                printf("%s DEF reduced by 70%% for 3 turns!\n", state->enemies[target].name);
-            }
+            apply_character_skill(state, 1);
 
             state->skill1_cooldown = s1.cooldown;
-
         } else if (choice == 4) {
             if (state->skill2_cooldown > 0) {
                 printf("Skill on cooldown! (%d turns remaining)\n", state->skill2_cooldown);
@@ -828,75 +977,9 @@ int run_combat_loop(CombatState *state) {
             }
 
             printf("\n%s uses %s!\n", state->player.name, s2.name);
-
-            if (state->player.id == 1) {
-                /* Saber: AOE + ATK debuff on enemies */
-                int dmg = (state->player.atk * 120) / 100;
-                for (int i = 0; i < state->num_enemies; i++) {
-                    apply_damage(state, i, dmg);
-
-                    state->enemies[i].status.atk_debuff_turns = 2;
-                    state->enemies[i].status.atk_debuff_percent = 40;
-                }
-                printf("All enemies' ATK reduced by 40%% for 2 turns!\n");
-
-            } else if (state->player.id == 2) {
-                /* Ishtar: AOE + SPD debuff on enemies + SPD buff self */
-                int dmg = (state->player.atk * 100) / 100;
-                for (int i = 0; i < state->num_enemies; i++) {
-                    apply_damage(state, i, dmg);
-
-                    if (random_percent(50)) {
-                        state->enemies[i].status.spd_debuff_turns = 2;
-                        state->enemies[i].status.spd_debuff_percent = 35;
-                        printf("%s is slowed! SPD reduced by 35%% for 2 turns\n", state->enemies[i].name);
-                    }
-                }
-
-                state->player.status.spd_buff_turns = 2;
-                state->player.status.spd_buff_percent = 60;
-                printf("%s SPD increased by 60%% for 2 turns!\n", state->player.name);
-
-            } else if (state->player.id == 3) {
-                /* Gilgamesh: Single-target heavy attack + DEF debuff + chance stun */
-                int target = 0;
-                if (state->num_enemies > 1) {
-                    printf("Target enemy (0-%d): ", state->num_enemies - 1);
-                    scanf("%d", &target);
-                }
-                target = clamp(target, 0, state->num_enemies - 1);
-
-                int dmg = (state->player.atk * 170) / 100;
-                apply_damage(state, target, dmg);
-
-                state->enemies[target].status.def_debuff_turns = 3;
-                state->enemies[target].status.def_debuff_percent = 60;
-                printf("%s DEF reduced by 60%% for 3 turns!\n", state->enemies[target].name);
-
-                if (random_percent(60)) {
-                    state->enemies[target].status.stunned_turns = 1;
-                    printf("%s is stunned for 1 turn!\n", state->enemies[target].name);
-                }
-
-            } else if (state->player.id == 4) {
-                /* Welt: AOE + big SPD debuff + chance stun */
-                int dmg = (state->player.atk * 110) / 100;
-                for (int i = 0; i < state->num_enemies; i++) {
-                    apply_damage(state, i, dmg);
-
-                    state->enemies[i].status.spd_debuff_turns = 2;
-                    state->enemies[i].status.spd_debuff_percent = 70;
-
-                    if (random_percent(55)) {
-                        state->enemies[i].status.stunned_turns = 1;
-                        printf("%s is stunned for 1 turn!\n", state->enemies[i].name);
-                    }
-                }
-                printf("All enemies' SPD reduced by 70%% for 2 turns!\n");
-            }
+            apply_character_skill(state, 2);
 
             state->skill2_cooldown = s2.cooldown;
-
         } else if (choice == 5 && weapon_skill != NULL) {
             if (state->weapon_skill_cooldown > 0) {
                 printf("Weapon skill on cooldown! (%d turns remaining)\n", state->weapon_skill_cooldown);
@@ -920,8 +1003,7 @@ int run_combat_loop(CombatState *state) {
                 apply_damage(state, target, dmg);
 
                 if (weapon_skill->stun_chance > 0 && random_percent(weapon_skill->stun_chance)) {
-                    state->enemies[target].status.stunned_turns = 1;
-                    printf("%s is stunned for 1 turn!\n", state->enemies[target].name);
+                    apply_stun_effect(&state->enemies[target], 1);
                 }
                 if (weapon_skill->burn_chance > 0 && random_percent(weapon_skill->burn_chance)) {
                     int burn = (state->player.atk * weapon_skill->burn_damage_percent) / 100;
@@ -940,11 +1022,13 @@ int run_combat_loop(CombatState *state) {
                 printf("Attacking all enemies!\n");
                 int dmg = (state->player.atk * weapon_skill->damage_percent) / 100;
                 for (int i = 0; i < state->num_enemies; i++) {
-                    apply_damage(state, i, dmg);
+                    int hit = apply_damage(state, i, dmg);
+
+                    /* FIXED: Only apply effects if attack hit */
+                    if (!hit) continue;
 
                     if (weapon_skill->stun_chance > 0 && random_percent(weapon_skill->stun_chance)) {
-                        state->enemies[i].status.stunned_turns = 1;
-                        printf("%s is stunned for 1 turn!\n", state->enemies[i].name);
+                        apply_stun_effect(&state->enemies[i], 1);
                     }
                     if (weapon_skill->burn_chance > 0 && random_percent(weapon_skill->burn_chance)) {
                         int burn = (state->player.atk * weapon_skill->burn_damage_percent) / 100;
@@ -962,26 +1046,12 @@ int run_combat_loop(CombatState *state) {
                 }
             }
 
-            /* Self buffs/heal from weapon skill */
             if (weapon_skill->spd_buff_percent > 0) {
-                state->player.status.spd_buff_percent = weapon_skill->spd_buff_percent;
-                state->player.status.spd_buff_turns = weapon_skill->spd_buff_duration;
-                printf("%s SPD increased by %d%% for %d turns!\n",
-                       state->player.name, weapon_skill->spd_buff_percent, weapon_skill->spd_buff_duration);
+                apply_player_spd_buff(state, weapon_skill->spd_buff_percent, weapon_skill->spd_buff_duration);
             }
 
             if (weapon_skill->heal_percent > 0) {
-                int heal = (state->player.hp * weapon_skill->heal_percent) / 100;
-
-                if (state->player.status.healing_reduction_turns > 0) {
-                    heal = (heal * (100 - state->player.status.healing_reduction_percent)) / 100;
-                }
-
-                state->player_current_hp += heal;
-                if (state->player_current_hp > state->player.hp) state->player_current_hp = state->player.hp;
-
-                printf("%s heals for %d HP! (HP: %d/%d)\n",
-                       state->player.name, heal, state->player_current_hp, state->player.hp);
+                heal_player_percent(state, weapon_skill->heal_percent);
             }
 
             state->weapon_skill_cooldown = WEAPON_SKILL_COOLDOWN;
@@ -1004,7 +1074,6 @@ int run_combat_loop(CombatState *state) {
             continue;
         }
 
-        /* End of player action: update turn + enemy phase */
         update_combat_turn(state);
 
         for (int i = 0; i < state->num_enemies; i++) {
@@ -1020,7 +1089,7 @@ int run_combat_loop(CombatState *state) {
             if (action == 0) {
                 int dmg = get_effective_enemy_damage(&state->enemies[i], NORMAL_ATTACK_PERCENT);
                 printf("%s attacks %s!\n", state->enemies[i].name, state->player.name);
-                apply_player_damage(state, dmg);
+                apply_player_damage(state, dmg, &state->enemies[i]);
             } else {
                 apply_enemy_skill(state, i, action);
             }
@@ -1028,7 +1097,9 @@ int run_combat_loop(CombatState *state) {
             if (state->player_current_hp <= 0) break;
         }
 
+        /* FIXED: Update turn counters AFTER enemies have acted */
+        update_combat_turn(state);
+
         display_combat_state(state);
     }
 }
-
